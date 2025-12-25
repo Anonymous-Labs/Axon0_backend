@@ -1,0 +1,41 @@
+# Core FastAPI and async dependencies
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+
+# Database
+sqlalchemy
+alembic
+aiosqlite
+
+# Authentication and Security
+python-jose[cryptography]
+python-multipart
+
+# HTTP client for external APIs
+httpx
+
+# Workers and background tasks
+arq
+redis
+
+# WebSocket support
+websockets
+
+# Environment and configuration
+python-dotenv
+
+# Testing
+pytest
+pytest-asyncio
+httpx
+
+# Development
+black
+isort
+flake8
+
+# Optional: For embeddings (if using local models)
+# sentence-transformers==2.2.2
+# faiss-cpu==1.7.4
