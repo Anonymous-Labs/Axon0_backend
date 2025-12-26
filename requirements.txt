@@ -36,6 +36,16 @@ black
 isort
 flake8
 
-# Optional: For embeddings (if using local models)
-# sentence-transformers==2.2.2
-# faiss-cpu==1.7.4
+# Vector database and embeddings
+faiss-cpu
+sentence-transformers
+
+# Google Generative AI
+google-generativeai
+
+# Graph and network analysis
+networkx
+
+# Additional utilities for text processing
+nltk
+spacy
