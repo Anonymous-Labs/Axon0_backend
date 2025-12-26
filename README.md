@@ -8,6 +8,7 @@ AXON provides a universal memory layer that enables AI agents and chatbots to re
 
 ## 🚀 Features
 
+### Core Memory Features
 - **Semantic Memory Search**: Natural language queries with vector similarity
 - **Intelligent Compression**: Automatic summarization of old memories
 - **Episodic Clustering**: Group related memories for better organization
@@ -18,6 +19,73 @@ AXON provides a universal memory layer that enables AI agents and chatbots to re
 - **Multi-framework Integration**: Works with LangChain, CrewAI, Agno, and more
 - **Secure Authentication**: JWT-based auth with proper password hashing
 - **Scalable Architecture**: Built for high-performance and multi-tenancy
+
+### 🧠 Enhanced Memory System (Latest Update)
+
+#### Vector Database Integration
+- **FAISS Integration**: High-performance vector similarity search
+- **Sentence Transformers**: State-of-the-art embedding generation using `all-MiniLM-L6-v2`
+- **Automatic Embedding**: All memories are automatically vectorized on creation
+- **Efficient Retrieval**: Sub-linear time complexity for similarity searches
+
+#### AI-Powered Content Processing
+- **Google Gemini Integration**: Advanced content restructuring and chunking
+- **Intelligent Chunking**: Content broken into meaningful, self-contained chunks
+- **Context Preservation**: Maintains temporal and causal relationships
+- **Metadata Extraction**: Automatic extraction of key concepts, topics, and importance
+
+#### Episodic Memory & Clustering
+- **Episodic Clusters**: Group related memories by time, context, or topic
+- **Decision Trails**: Track decision-making processes across memories
+- **Project-Level Recall**: Understand "what happened last time we built X"
+- **Temporal Linking**: Connect memories across time periods
+
+#### Context Composer
+- **Smart Ranking**: Ranks memories based on usage patterns, tags, and relevance
+- **Multi-Factor Scoring**: Combines semantic similarity, recency, importance, and feedback
+- **Contextual Restructuring**: Reorganizes memories for specific purposes (learning, decision-making)
+- **Dynamic Composition**: Creates coherent responses from multiple memory sources
+
+#### Feedback Loop System
+- **Continuous Learning**: System improves based on user feedback
+- **Missing Context Detection**: Automatically identifies and fills contextual gaps
+- **Relevance Optimization**: Adjusts memory importance and relationships based on usage
+- **Quality Metrics**: Tracks and improves memory retrieval quality over time
+
+#### Memory Relationships & Graphs
+- **Semantic Relationships**: Connects memories by meaning and context
+- **Network Analysis**: Uses graph theory for memory organization
+- **Community Detection**: Identifies natural clusters and themes
+- **Centrality Scoring**: Highlights most important memories in networks
+
+### 🎯 Episodic Clustering Benefits
+
+The episodic clustering system unlocks several key capabilities:
+
+1. **Project-Level Recall**: Remember entire project contexts and decision processes
+2. **Decision Trails**: Track how decisions were made and what led to them
+3. **Knowledge Evolution**: See how understanding developed over time
+4. **Context Preservation**: Maintain situational awareness across sessions
+5. **Pattern Recognition**: Identify recurring themes and approaches
+
+### 🔄 Memory Processing Pipeline
+
+When a memory is created, it goes through this comprehensive pipeline:
+
+1. **Content Analysis** → Gemini AI analyzes and restructures content
+2. **Chunking** → Content broken into meaningful chunks with embeddings
+3. **Vector Storage** → Embeddings stored in FAISS for fast retrieval
+4. **Relationship Discovery** → Similar memories and relationships identified
+5. **Clustering** → Added to appropriate episodic clusters
+6. **Metadata Enrichment** → Tags, concepts, and importance scores added
+7. **Feedback Integration** → System learns from user interactions
+
+### 🎨 Frontend Visualizations
+
+- **Cluster View**: Visual clusters with importance indicators and key concepts
+- **Graph View**: Network visualization of memory relationships
+- **Timeline View**: Chronological view of episodic clusters and decision trails
+- **Interactive Exploration**: Click to navigate between related memories
 
 ## 🏗️ Architecture
 
@@ -58,6 +126,19 @@ AXON provides a universal memory layer that enables AI agents and chatbots to re
 3. **Install dependencies:**
    ```bash
    pip install -r requirements.txt
+   ```
+
+   **Note**: The enhanced memory system requires additional packages:
+   - `faiss-cpu` for vector similarity search
+   - `google-generativeai` for AI-powered content processing
+   - `sentence-transformers` for embedding generation
+   - `networkx` for graph analysis
+   - `nltk` and `spacy` for text processing
+
+4. **Set up Gemini API Key:**
+   Create a `.env` file in the backend directory:
+   ```env
+   GEMINI_API_KEY=your_gemini_api_key_here
    ```
 
 4. **Set up environment variables:**

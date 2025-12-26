@@ -15,8 +15,18 @@ class Settings(BaseSettings):
     # Redis (for ARQ workers and caching)
     redis_url: str = "redis://localhost:6379"
 
-    # Gemini API (for summarization)
+    # Gemini API (for summarization and content restructuring)
     gemini_api_key: str = ""
+
+    # Vector Database Settings (FAISS)
+    faiss_index_path: str = "./data/faiss_indices"
+    embedding_model: str = "all-MiniLM-L6-v2"  # Sentence transformer model
+    embedding_dimension: int = 384  # Dimension for all-MiniLM-L6-v2
+
+    # Memory Processing Settings
+    max_chunk_size: int = 1000  # Maximum characters per chunk
+    chunk_overlap: int = 200  # Overlap between chunks
+    similarity_threshold: float = 0.7  # Threshold for episodic clustering
 
     # JWT Settings
     jwt_secret_key: str = "your-jwt-secret-key"

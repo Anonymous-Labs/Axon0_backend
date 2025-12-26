@@ -21,3 +21,7 @@ class User(Base):
     memories = relationship("Memory", back_populates="user")
     feedbacks = relationship("Feedback", back_populates="user")
     api_keys = relationship("APIKey", back_populates="user")
+
+    # New episodic relationships
+    episodic_clusters = relationship("EpisodicCluster", back_populates="user")
+    memory_graphs = relationship("MemoryGraph", back_populates="user")

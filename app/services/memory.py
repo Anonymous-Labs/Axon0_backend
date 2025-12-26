@@ -1,15 +1,23 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import and_, or_, desc, func
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 from datetime import datetime, timedelta
 import json
+import uuid
 
-from app.models.memory import Memory, Feedback
+from app.models.memory import (
+    Memory, Feedback, MemoryChunk, EpisodicCluster,
+    ContextComposition, memory_relationships
+)
 from app.schemas.memory import (
     MemoryCreate, MemoryUpdate, MemorySearch,
     MemorySearchResponse, FeedbackCreate, MemoryStats
 )
+from app.services.vector_service import vector_service
+from app.services.gemini_service import gemini_service
+from app.services.episodic_linker import episodic_linker
+from app.services.context_composer import context_composer
 
 
 class MemoryService:
@@ -17,18 +25,76 @@ class MemoryService:
         self.db = db
 
     async def create_memory(self, memory_data: MemoryCreate, user_id: int) -> Memory:
-        """Create a new memory."""
+        """Create a new memory with full processing pipeline."""
+        # Step 1: Restructure content using Gemini
+        restructured_data = gemini_service.restructure_content(
+            memory_data.content,
+            context=memory_data.title
+        )
+
+        # Extract metadata from restructuring
+        chunks_data = restructured_data.get("chunks", [])
+        suggested_tags = restructured_data.get("suggested_tags", [])
+        key_concepts = restructured_data.get("key_concepts", [])
+
+        # Combine user tags with suggested tags
+        all_tags = list(set((memory_data.tags or []) + suggested_tags))
+
+        # Generate summary
+        summary = gemini_service.generate_memory_summary(
+            memory_data.content,
+            chunks_data
+        )
+
+        # Step 2: Generate embedding for the full content
+        content_embedding = vector_service.generate_embedding(memory_data.content)
+
+        # Step 3: Create memory record
         db_memory = Memory(
             user_id=user_id,
             content=memory_data.content,
-            title=memory_data.title,
-            extra_metadata=memory_data.extra_metadata or {},
-            tags=memory_data.tags or [],
-            importance_score=memory_data.importance_score,
-            priority=memory_data.priority,
+            title=memory_data.title or restructured_data.get("title", ""),
+            summary=summary,
+            extra_metadata={
+                **(memory_data.extra_metadata or {}),
+                "key_concepts": key_concepts,
+                "episodic_markers": restructured_data.get("episodic_markers", []),
+                "restructured_data": restructured_data
+            },
+            tags=all_tags,
+            importance_score=memory_data.importance_score or 0.5,
+            priority=memory_data.priority or "medium",
+            embedding=content_embedding,
+            cluster_id=None  # Will be set by episodic linker
         )
 
         self.db.add(db_memory)
+        await self.db.flush()  # Get the memory ID without committing
+
+        # Step 4: Create memory chunks
+        await self._create_memory_chunks(db_memory.id, user_id, chunks_data)
+
+        # Step 5: Find similar memories and create relationships
+        similar_memories = episodic_linker.find_similar_memories(
+            user_id, content_embedding, exclude_ids={db_memory.id}
+        )
+
+        if similar_memories:
+            relationships = episodic_linker.create_memory_relationships(
+                user_id, db_memory.id, similar_memories
+            )
+            await self._create_memory_relationships(relationships)
+
+        # Step 6: Check for episodic clustering
+        cluster_id = await self._find_or_create_episodic_cluster(
+            user_id, db_memory, similar_memories
+        )
+        if cluster_id:
+            db_memory.cluster_id = cluster_id
+
+        # Step 7: Add to vector database
+        vector_service.add_memory_embedding(user_id, db_memory.id, content_embedding)
+
         await self.db.commit()
         await self.db.refresh(db_memory)
         return db_memory
@@ -230,6 +296,98 @@ class MemoryService:
             average_importance=round(average_importance, 2),
             memories_by_priority=memories_by_priority
         )
+
+    # Helper methods for enhanced memory processing
+
+    async def _create_memory_chunks(self, memory_id: int, user_id: int, chunks_data: List[Dict[str, Any]]):
+        """Create memory chunks from restructured data."""
+        for i, chunk_data in enumerate(chunks_data):
+            # Generate embedding for chunk
+            chunk_embedding = vector_service.generate_embedding(chunk_data.get("content", ""))
+
+            chunk = MemoryChunk(
+                memory_id=memory_id,
+                user_id=user_id,
+                content=chunk_data.get("content", ""),
+                chunk_index=i,
+                chunk_type=chunk_data.get("type", "text"),
+                embedding=chunk_embedding,
+                token_count=len(chunk_data.get("content", "").split()),
+                importance_score=chunk_data.get("importance", 0.5)
+            )
+
+            self.db.add(chunk)
+
+    async def _create_memory_relationships(self, relationships: List[Dict[str, Any]]):
+        """Create relationships between memories in the database."""
+        for rel in relationships:
+            # Insert into association table
+            await self.db.execute(
+                memory_relationships.insert().values(
+                    memory_id=rel["memory_id"],
+                    related_memory_id=rel["related_memory_id"],
+                    relationship_type=rel["relationship_type"],
+                    strength=rel["strength"]
+                )
+            )
+
+    async def _find_or_create_episodic_cluster(self, user_id: int, memory: Memory,
+                                             similar_memories: List[Tuple[int, float]]) -> Optional[str]:
+        """Find existing cluster or create new one for episodic memory."""
+        # Check temporal proximity (memories created within 24 hours)
+        recent_memories_result = await self.db.execute(
+            select(Memory).where(
+                and_(
+                    Memory.user_id == user_id,
+                    Memory.created_at >= memory.created_at - timedelta(hours=24),
+                    Memory.created_at <= memory.created_at + timedelta(hours=24),
+                    Memory.id != memory.id
+                )
+            ).order_by(desc(Memory.created_at)).limit(10)
+        )
+
+        recent_memories = recent_memories_result.scalars().all()
+
+        if len(recent_memories) >= 2:  # Need at least 2 memories for a cluster
+            # Check semantic similarity
+            memory_ids = [mem.id for mem in recent_memories] + [memory.id]
+            cluster = episodic_linker.create_episodic_cluster(user_id, memory_ids)
+            self.db.add(cluster)
+            return cluster.id
+
+        return None
+
+    async def search_memories_enhanced(self, search_params: MemorySearch, user_id: int) -> MemorySearchResponse:
+        """Enhanced search using vector similarity and context composition."""
+        # If semantic search is requested
+        if search_params.semantic_search and search_params.query:
+            # Use context composer for enhanced search
+            composition = context_composer.compose_context(
+                user_id, search_params.query, "search", search_params.limit or 10
+            )
+
+            # Get memories by IDs
+            memory_ids = composition.memory_ids
+            if memory_ids:
+                result = await self.db.execute(
+                    select(Memory).where(
+                        and_(Memory.id.in_(memory_ids), Memory.user_id == user_id)
+                    )
+                )
+                memories = result.scalars().all()
+
+                # Sort by composition ranking
+                memory_order = {mem_id: i for i, mem_id in enumerate(memory_ids)}
+                memories.sort(key=lambda m: memory_order.get(m.id, 999))
+
+                return MemorySearchResponse(
+                    memories=memories,
+                    total_count=len(memories),
+                    search_score=composition.relevance_score
+                )
+
+        # Fall back to original search
+        return await self.search_memories(search_params, user_id)
 
 
 # Dependency function for getting memory service
