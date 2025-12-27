@@ -4,6 +4,7 @@ from collections import defaultdict
 import json
 
 from app.services.gemini_service import gemini_service
+from app.models.gemini_models import ImprovementSuggestions
 from app.services.vector_service import vector_service
 from app.services.context_composer import context_composer
 from app.models.memory import Feedback, Memory
@@ -37,12 +38,14 @@ class FeedbackLoop:
 
             if feedback_analysis.get("needs_improvement"):
                 # Generate improvement suggestions
-                suggestions = gemini_service.suggest_improvements(memory_feedback)
+                suggestions_response = gemini_service.suggest_improvements(memory_feedback)
+                suggestions = suggestions_response.data if suggestions_response.success else None
 
-                # Implement improvements
-                improvements = await self._implement_improvements(
-                    db, feedback.memory_id, suggestions
-                )
+                if suggestions:
+                    # Implement improvements
+                    improvements = await self._implement_improvements(
+                        db, feedback.memory_id, suggestions
+                    )
 
         # Update memory feedback score
         await self._update_memory_feedback_score(db, feedback.memory_id)
@@ -116,7 +119,7 @@ class FeedbackLoop:
         return analysis
 
     async def _implement_improvements(self, db: AsyncSession, memory_id: int,
-                                    suggestions: Dict[str, Any]) -> Dict[str, Any]:
+                                    suggestions: ImprovementSuggestions) -> Dict[str, Any]:
         """Implement improvements based on feedback analysis."""
 
         improvements = {
@@ -134,7 +137,7 @@ class FeedbackLoop:
             return improvements
 
         # Create new chunks for missing context
-        missing_context = suggestions.get("missing_context", [])
+        missing_context = suggestions.missing_context
         if missing_context:
             new_chunks = await self._create_missing_context_chunks(
                 db, memory, missing_context
@@ -142,13 +145,13 @@ class FeedbackLoop:
             improvements["new_chunks_created"] = new_chunks
 
         # Update relationships
-        relationship_updates = suggestions.get("relationship_updates", [])
+        relationship_updates = suggestions.relationship_updates
         if relationship_updates:
             updates = await self._update_relationships(db, memory_id, relationship_updates)
             improvements["relationship_updates"] = updates
 
         # Adjust memory metadata
-        if suggestions.get("improvement_suggestions"):
+        if suggestions.improvement_suggestions:
             adjustments = await self._adjust_memory_metadata(db, memory, suggestions)
             improvements["memory_adjustments"] = adjustments
 
@@ -211,7 +214,7 @@ class FeedbackLoop:
         return relationship_updates
 
     async def _adjust_memory_metadata(self, db: AsyncSession, memory: Memory,
-                                    suggestions: Dict[str, Any]) -> List[str]:
+                                    suggestions: ImprovementSuggestions) -> List[str]:
         """Adjust memory metadata based on feedback."""
 
         adjustments = []
