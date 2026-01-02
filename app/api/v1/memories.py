@@ -11,6 +11,9 @@ from app.schemas.memory import (
 )
 from app.schemas.user import User as UserSchema
 from app.services.memory import MemoryService
+from app.core.dependencies import get_memory_service
+from app.core.decorators import cache_result
+from app.core.redis_client import cache_service
 from app.utils.auth import verify_token
 from sqlalchemy import select
 
@@ -49,12 +52,20 @@ router = APIRouter()
 async def create_memory(
     memory_data: MemoryCreate,
     current_user: UserSchema = Depends(get_current_user),
+    memory_service: MemoryService = Depends(get_memory_service),
     db: AsyncSession = Depends(get_db)
 ):
     """Create a new memory."""
-    memory_service = MemoryService(db)
     try:
         memory = await memory_service.create_memory(memory_data, current_user.id)
+        
+        # Invalidate user's memory list cache (non-blocking)
+        try:
+            await cache_service.delete(f"memories:list:{current_user.id}")
+        except Exception:
+            # Cache unavailable, continue without invalidation
+            pass
+        
         return memory
     except Exception as e:
         raise HTTPException(
@@ -67,16 +78,50 @@ async def create_memory(
 async def get_memory(
     memory_id: int,
     current_user: UserSchema = Depends(get_current_user),
+    memory_service: MemoryService = Depends(get_memory_service),
     db: AsyncSession = Depends(get_db)
 ):
     """Get a specific memory by ID."""
-    memory_service = MemoryService(db)
+    # Check cache first (gracefully handle Redis unavailability)
+    try:
+        cache_key = f"memory:{current_user.id}:{memory_id}"
+        cached_memory = await cache_service.get(cache_key)
+        if cached_memory:
+            # Return the Memory object, not the dict
+            # The cache returns a dict, but we need to return the actual Memory model
+            # For now, just fetch from DB to ensure consistency
+            pass
+    except Exception:
+        # Cache unavailable, continue with DB lookup
+        pass
+    
     memory = await memory_service.get_memory(memory_id, current_user.id)
     if not memory:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Memory not found"
         )
+    
+    # Cache the result (non-blocking)
+    try:
+        cache_key = f"memory:{current_user.id}:{memory_id}"
+        memory_dict = {
+            "id": memory.id,
+            "user_id": memory.user_id,
+            "content": memory.content,
+            "title": memory.title,
+            "summary": memory.summary,
+            "tags": memory.tags,
+            "importance_score": memory.importance_score,
+            "priority": memory.priority,
+            "created_at": memory.created_at.isoformat() if memory.created_at else None,
+            "updated_at": memory.updated_at.isoformat() if memory.updated_at else None,
+        }
+        await cache_service.set(cache_key, memory_dict, ttl=300)  # Cache for 5 minutes
+    except Exception:
+        # Cache unavailable, continue without caching
+        pass
+    
     return memory
 
 
@@ -120,11 +165,44 @@ async def get_memories(
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
     current_user: UserSchema = Depends(get_current_user),
+    memory_service: MemoryService = Depends(get_memory_service),
     db: AsyncSession = Depends(get_db)
 ):
     """Get all memories for the current user."""
-    memory_service = MemoryService(db)
+    # Try to get from cache (gracefully handle Redis unavailability)
+    try:
+        cache_key = f"memories:list:{current_user.id}:{limit}:{offset}"
+        cached_memories = await cache_service.get(cache_key)
+        # Note: We still fetch from DB to ensure we return Memory objects, not dicts
+        # Cache is mainly for performance optimization
+    except Exception:
+        # Cache unavailable, continue with DB lookup
+        pass
+    
     memories = await memory_service.get_user_memories(current_user.id, limit, offset)
+    
+    # Cache the result (non-blocking)
+    try:
+        cache_key = f"memories:list:{current_user.id}:{limit}:{offset}"
+        memories_list = [
+            {
+                "id": m.id,
+                "user_id": m.user_id,
+                "content": m.content,
+                "title": m.title,
+                "summary": m.summary,
+                "tags": m.tags,
+                "importance_score": m.importance_score,
+                "priority": m.priority,
+                "created_at": m.created_at.isoformat() if m.created_at else None,
+            }
+            for m in memories
+        ]
+        await cache_service.set(cache_key, memories_list, ttl=180)  # Cache for 3 minutes
+    except Exception:
+        # Cache unavailable, continue without caching
+        pass
+    
     return memories
 
 

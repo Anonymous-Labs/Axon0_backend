@@ -2,11 +2,14 @@ from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime, timedelta
 import numpy as np
 from collections import defaultdict
+import logging
 
 from app.services.vector_service import vector_service
 from app.services.gemini_service import gemini_service
 from app.models.memory import ContextComposition
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class ContextComposer:
@@ -219,7 +222,7 @@ class ContextComposer:
                 response = gemini_service.model.generate_content(prompt)
                 return response.text.strip()
             except Exception as e:
-                print(f"Composition generation failed: {e}")
+                logger.error("Composition generation failed", extra={"error": str(e)}, exc_info=True)
 
         # Fallback: simple concatenation with summaries
         summaries = [mem.get("summary", mem.get("content", "")[:200]) for mem in memories]

@@ -2,6 +2,7 @@ import google.generativeai as genai
 from typing import List, Dict, Any, Optional, Tuple
 import json
 import re
+import logging
 from app.config import settings
 from app.models.gemini_models import (
     RestructuredContent,
@@ -15,6 +16,8 @@ from app.models.gemini_models import (
     SuggestionsResponse,
     ClusterNameResponse
 )
+
+logger = logging.getLogger(__name__)
 
 
 class GeminiService:
@@ -89,7 +92,7 @@ class GeminiService:
                 raw_response=result_text
             )
         except Exception as e:
-            print(f"Gemini restructuring failed: {e}")
+            logger.error("Gemini restructuring failed", extra={"error": str(e)}, exc_info=True)
             simple_result = self._simple_chunking(content)
             return RestructuredContentResponse(
                 success=False,
@@ -161,7 +164,7 @@ class GeminiService:
             response = self.model.generate_content(prompt)
             return response.text.strip()
         except Exception as e:
-            print(f"Summary generation failed: {e}")
+            logger.error("Summary generation failed", extra={"error": str(e)}, exc_info=True)
             return content[:300] + "..." if len(content) > 300 else content
 
     def analyze_relationships(self, memory_content: str, existing_memories: List[Dict]) -> RelationshipsResponse:
@@ -210,7 +213,7 @@ class GeminiService:
                 raw_response=result_text
             )
         except Exception as e:
-            print(f"Relationship analysis failed: {e}")
+            logger.error("Relationship analysis failed", extra={"error": str(e)}, exc_info=True)
             return RelationshipsResponse(
                 success=False,
                 error_message=str(e),
@@ -258,7 +261,7 @@ class GeminiService:
                 raw_response=result_text
             )
         except Exception as e:
-            print(f"Improvement suggestions failed: {e}")
+            logger.error("Improvement suggestions failed", extra={"error": str(e)}, exc_info=True)
             return SuggestionsResponse(
                 success=False,
                 error_message=str(e),

@@ -18,13 +18,16 @@ httpx
 
 # Workers and background tasks
 arq
-redis
+redis[hiredis]
 
 # WebSocket support
 websockets
 
 # Environment and configuration
 python-dotenv
+
+# Logging
+python-json-logger
 
 # Testing
 pytest

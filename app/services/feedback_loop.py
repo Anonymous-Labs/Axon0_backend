@@ -2,6 +2,7 @@ from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime, timedelta
 from collections import defaultdict
 import json
+import logging
 
 from app.services.gemini_service import gemini_service
 from app.models.gemini_models import ImprovementSuggestions
@@ -10,6 +11,8 @@ from app.services.context_composer import context_composer
 from app.models.memory import Feedback, Memory
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import and_, or_, select, func, desc
+
+logger = logging.getLogger(__name__)
 
 
 class FeedbackLoop:
@@ -202,7 +205,7 @@ class FeedbackLoop:
                     })
 
                 except Exception as e:
-                    print(f"Failed to create context chunk: {e}")
+                    logger.error("Failed to create context chunk", extra={"error": str(e)}, exc_info=True)
 
         return created_chunks
 

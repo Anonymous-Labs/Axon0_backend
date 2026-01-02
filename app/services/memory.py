@@ -5,6 +5,7 @@ from typing import List, Optional, Dict, Any, Tuple
 from datetime import datetime, timedelta
 import json
 import uuid
+import logging
 
 from app.models.memory import (
     Memory, Feedback, MemoryChunk, EpisodicCluster,
@@ -18,6 +19,8 @@ from app.services.vector_service import vector_service
 from app.services.gemini_service import gemini_service
 from app.services.episodic_linker import episodic_linker
 from app.services.context_composer import context_composer
+
+logger = logging.getLogger(__name__)
 
 
 class MemoryService:
@@ -750,7 +753,7 @@ class MemoryService:
             return response.text.strip()
         except Exception as e:
             # Fallback: concatenate with deduplication
-            print(f"Merge failed: {e}")
+            logger.error("Memory merge failed", extra={"error": str(e)}, exc_info=True)
             return " | ".join(contents)
 
     async def optimize_memory_storage(self, user_id: int) -> Dict[str, Any]:

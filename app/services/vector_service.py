@@ -1,10 +1,15 @@
 import os
 import numpy as np
 import faiss
+import hashlib
 from typing import List, Tuple, Optional, Dict, Any
 from sentence_transformers import SentenceTransformer
 import json
+import logging
 from app.config import settings
+from app.core.redis_client import cache_service
+
+logger = logging.getLogger(__name__)
 
 
 class VectorService:
@@ -60,12 +65,75 @@ class VectorService:
             with open(mapping_path, 'w') as f:
                 json.dump(self.id_mappings[user_id], f)
 
-    def generate_embedding(self, text: str) -> List[float]:
-        """Generate embedding for text using sentence transformer."""
+    def generate_embedding(self, text: str, use_cache: bool = True) -> List[float]:
+        """
+        Generate embedding for text using sentence transformer.
+        
+        Args:
+            text: Text to generate embedding for
+            use_cache: Whether to use cache for embeddings (sync function, cache check happens in async wrapper)
+        
+        Returns:
+            List[float]: Normalized embedding vector
+        """
+        # Generate embedding
         embedding = self.embedding_model.encode(text, convert_to_numpy=True)
         # Normalize for cosine similarity
         embedding = embedding / np.linalg.norm(embedding)
         return embedding.tolist()
+    
+    async def generate_embedding_async(self, text: str, use_cache: bool = True) -> List[float]:
+        """
+        Generate embedding for text with caching support (async version).
+        
+        Args:
+            text: Text to generate embedding for
+            use_cache: Whether to use cache for embeddings
+        
+        Returns:
+            List[float]: Normalized embedding vector
+        """
+        # Check cache first if enabled
+        if use_cache:
+            cache_key = f"embedding:{hashlib.md5(text.encode()).hexdigest()}"
+            cached = await cache_service.get(cache_key)
+            if cached:
+                logger.debug("Embedding cache hit", extra={"text_length": len(text)})
+                return cached
+        
+        # Generate embedding (synchronous call)
+        embedding_list = self.generate_embedding(text, use_cache=False)
+        
+        # Cache the result
+        if use_cache:
+            cache_key = f"embedding:{hashlib.md5(text.encode()).hexdigest()}"
+            await cache_service.set(cache_key, embedding_list, ttl=86400)  # Cache for 24 hours
+        
+        return embedding_list
+    
+    def generate_embeddings_batch(self, texts: List[str]) -> List[List[float]]:
+        """
+        Generate embeddings for multiple texts in batch (more efficient).
+        
+        Args:
+            texts: List of texts to generate embeddings for
+        
+        Returns:
+            List[List[float]]: List of normalized embedding vectors
+        """
+        if not texts:
+            return []
+        
+        # Batch encode (more efficient than individual calls)
+        embeddings = self.embedding_model.encode(texts, convert_to_numpy=True, show_progress_bar=False)
+        
+        # Normalize each embedding
+        normalized_embeddings = []
+        for embedding in embeddings:
+            normalized = embedding / np.linalg.norm(embedding)
+            normalized_embeddings.append(normalized.tolist())
+        
+        return normalized_embeddings
 
     def add_memory_embedding(self, user_id: int, memory_id: int, embedding: List[float]):
         """Add memory embedding to FAISS index."""
@@ -147,12 +215,24 @@ class VectorService:
             self._rebuild_user_index(user_id)
             self.add_memory_embedding(user_id, memory_id, new_embedding)
 
-    def _rebuild_user_index(self, user_id: int):
-        """Rebuild index for user (used when updating embeddings)."""
-        # Get all current embeddings from database or cache
-        # For now, create empty index - this should be improved
+    def _rebuild_user_index(self, user_id: int, embeddings_data: Optional[List[Tuple[int, List[float]]]] = None):
+        """
+        Rebuild index for user with optional embeddings data.
+        
+        Args:
+            user_id: User ID
+            embeddings_data: Optional list of (memory_id, embedding) tuples to rebuild with
+        """
+        # Create new index
         self.indices[user_id] = faiss.IndexFlatIP(self.dimension)
         self.id_mappings[user_id] = {}
+        
+        # If embeddings data provided, add them
+        if embeddings_data:
+            self.add_memory_embeddings_batch(user_id, embeddings_data)
+            logger.info(f"Rebuilt index for user {user_id} with {len(embeddings_data)} embeddings")
+        else:
+            logger.warning(f"Rebuilt empty index for user {user_id} - embeddings may be lost")
 
     def delete_memory_embedding(self, user_id: int, memory_id: int):
         """Delete embedding from index (requires rebuild)."""

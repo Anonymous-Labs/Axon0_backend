@@ -1,15 +1,43 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 
 
 class MemoryBase(BaseModel):
-    content: str = Field(..., min_length=1, max_length=10000)
+    content: str = Field(..., min_length=1, max_length=50000)  # Increased for longer content
     title: Optional[str] = Field(None, max_length=500)
     extra_metadata: Optional[Dict[str, Any]] = None
-    tags: Optional[List[str]] = None
+    tags: Optional[List[str]] = Field(None, max_length=20)  # Limit number of tags
     importance_score: float = Field(0.5, ge=0.0, le=1.0)
     priority: str = Field("medium", pattern="^(low|medium|high)$")
+    
+    @field_validator('tags')
+    @classmethod
+    def validate_tags(cls, v: Optional[List[str]]) -> Optional[List[str]]:
+        """Validate and sanitize tags."""
+        if v is None:
+            return v
+        if len(v) > 20:
+            raise ValueError("Maximum 20 tags allowed")
+        # Sanitize each tag
+        from app.core.security import sanitize_input
+        return [sanitize_input(tag.strip(), max_length=50) for tag in v if tag.strip()][:20]
+    
+    @field_validator('title')
+    @classmethod
+    def validate_title(cls, v: Optional[str]) -> Optional[str]:
+        """Sanitize title."""
+        if v is None:
+            return v
+        from app.core.security import sanitize_input
+        return sanitize_input(v.strip(), max_length=500)
+    
+    @field_validator('content')
+    @classmethod
+    def validate_content(cls, v: str) -> str:
+        """Sanitize content."""
+        from app.core.security import sanitize_input
+        return sanitize_input(v.strip(), max_length=50000)
 
 
 class MemoryCreate(MemoryBase):
@@ -42,7 +70,7 @@ class Memory(MemoryBase):
 
 
 class MemorySearch(BaseModel):
-    query: str = Field(..., min_length=1)
+    query: str = Field(..., min_length=1, max_length=500)
     limit: int = Field(10, ge=1, le=100)
     offset: int = Field(0, ge=0)
     tags: Optional[List[str]] = None
@@ -50,6 +78,26 @@ class MemorySearch(BaseModel):
     min_importance: Optional[float] = Field(None, ge=0.0, le=1.0)
     cluster_id: Optional[str] = None
     semantic_search: bool = True
+    
+    @field_validator('query')
+    @classmethod
+    def validate_query(cls, v: str) -> str:
+        """Sanitize search query."""
+        from app.core.security import sanitize_input, sanitize_sql_like_pattern
+        # Don't HTML escape search queries, but sanitize SQL patterns
+        sanitized = sanitize_sql_like_pattern(v.strip())
+        return sanitized[:500]  # Limit length
+    
+    @field_validator('tags')
+    @classmethod
+    def validate_tags(cls, v: Optional[List[str]]) -> Optional[List[str]]:
+        """Validate and sanitize tags."""
+        if v is None:
+            return v
+        if len(v) > 10:
+            raise ValueError("Maximum 10 tags allowed in search")
+        from app.core.security import sanitize_input
+        return [sanitize_input(tag.strip(), max_length=50) for tag in v if tag.strip()][:10]
 
 
 class MemorySearchResponse(BaseModel):
